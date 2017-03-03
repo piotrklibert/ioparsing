@@ -3,6 +3,7 @@ ValueError     := Exception clone
 IndexError     := Exception clone
 AttributeError := Exception clone
 
+doRelativeFile("str.io")
 
 _MAX_LEN   := 9999999999999999
 
@@ -158,7 +159,6 @@ ParseResults := Object clone do(
         # Scheduler currentCoroutine showStack
         resend
     )
-    at := method(call delegateTo(self __toklist))
     isEmpty := method(call delegateTo(self __toklist))
 
     appendSeq := method(other,
@@ -233,7 +233,7 @@ ParseResults := Object clone do(
     values   := method(call delegateTo(self __tokdict))
     items    := method(self __tokdict map(k,v, [k, v]))
 
-
+    asString := method(self __toklist fmt)
     # pop := method(arg, default,
     #     if(call args isEmpty,
     #         args := [-1]
@@ -243,7 +243,6 @@ ParseResults := Object clone do(
     #             args := [args[0], v]
     #         else,
     #              TypeError raise("pop() got an unexpected keyword argument '%s'" % k)
-
     #     if (isinstance(args[0], int) or
     #                     len(args) == 1 or
     #                     args[0] in self),
@@ -1076,17 +1075,12 @@ MatchFirst := ParseExpression clone do(
 
         self exprs foreach(e,
             if(found isNil not,
-                writeln("break1> ", e, e type, instring, "==", found)
                 break
-                writeln("break2> ", " shouldnt be here")
             )
             err := try(
-                writeln("===2> ", e, e type, instring)
                 found := e _parse(instring, loc, doActions)
-                writeln("===3> ", found asBoolean)
             )
             err catch(ParseException,
-                writeln("asdasdasd", e, err msg)
                 if(err loc > maxExcLoc,
                     maxException := err
                     maxExcLoc := err loc
@@ -1101,10 +1095,8 @@ MatchFirst := ParseExpression clone do(
             )
         )
 
-        writeln("==4> ", found)
 
         if(found isNil not,
-            writeln("returning")
             return found)
 
         if(maxException isNil not,
@@ -1206,8 +1198,8 @@ Word := Token clone do(
         allChars := (cln initCharsOrig .. cln bodyCharsOrig)
 
         if(allChars containsSeq(" ") not and (opts min == 1 \
-                                         and opts max == 0 \
-                                         and opts exact == 0),
+                                              and opts max == 0 \
+                                              and opts exact == 0),
             if(cln bodyCharsOrig == cln initCharsOrig,
                 esc := _escapeRegexRangeChars(cln initCharsOrig)
                 cln reString := $"[#{esc}]+"
@@ -1223,12 +1215,13 @@ Word := Token clone do(
                 )
             )
             if(cln asKeyword,
-               cln reString := "\\b" .. cln.reString .. "\\b")
+                cln reString := "\\b" .. cln.reString .. "\\b")
 
             try(
-               cln re = cln reString asRegex
+                # cln reString println
+                cln re = cln reString asRegex
             ) catch(Exception,
-               cln re := nil
+                cln re := nil
             )
         )
         cln
@@ -1241,7 +1234,7 @@ Word := Token clone do(
             if(matches ?count == 0,
                  ParseException with(instring, loc, self errmsg, self) raise
             )
-            # TODO: inefficient, needs fixing the Regex Addon
+            # TODO: inefficient, needs fixing the RegexToken Addon
             loc := loc + matches at(0) end
             return [loc, matches at(0) string]
         )
@@ -1527,7 +1520,7 @@ Suppress := TokenConverter clone do(
 )
 
 
-Regex := Token clone do(
+RegexToken := Token clone do(       # changed name because it clashed with addon
     with := method(pattern, flags,
         # The parameters C{pattern} and C{flags} are passed to the
         # C{re.compile()} function as-is. See the Python C{re} module for an
@@ -1541,14 +1534,14 @@ Regex := Token clone do(
             cln re := cln pattern asRegex
             cln reString := cln pattern
         ,
-            if(pattern isKindOf(Regex),
+            if(pattern isKindOf(RegexToken),
                 cln re := pattern
                 cln pattern :=  pattern pattern
                 cln reString := pattern pattern
                 cln flags := flags
             ,
                 ValueError raise("
-                    Regex may only be constructed with a string or a compiled
+                    RegexToken may only be constructed with a string or a compiled
                     RE object
                 " dedent)
             )
@@ -2011,7 +2004,7 @@ __ParseResults := Object clone do(
 
 #         Example:,
 #             integer := Word(nums)
-#             ssn_expr := Regex(r"\d\d\d-\d\d-\d\d\d\d")
+#             ssn_expr := RegexToken(r"\d\d\d-\d\d-\d\d\d\d")
 #             house_number_expr := Suppress('#') + Word(nums, alphanums)
 #             user_data := (Group(house_number_expr)("house_number")
 #                         | Group(ssn_expr)("ssn")
