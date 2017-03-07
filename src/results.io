@@ -5,15 +5,11 @@ _ParseResultsWithOffset := Object clone do(
         cln offset := offset
         cln
     )
-
     at := method(i, i switch(0, self tok,
                              1, self offset))
-
-    setOffset := method(i,
-        self offset := i
-        self
-    )
+    setOffset := method(i, self offset := i; self)
     asString := method(self tok repr)
+    forward := method(call delegateTo(self tok))
 )
 
 
@@ -235,7 +231,6 @@ ParseResults := Object clone do(
                     v := self at(k)
                     if(out isEmpty not, out append(NL))
                     out append($"#{indent}#{pad}- #{k}")
-                    v isKindOf(ParseResults) println
                     if(v isKindOf(ParseResults),
                         if(v __toklist isEmpty not,
                             out append(v dump(indent, depth + 1))

@@ -11,7 +11,9 @@ _bslash    := 92 asCharacter
 whites     := "\t\n\r "
 printables := "0123456789abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ!'#$%&\"()*+,-./:;<=>?@[\\]^_`{|}~"
 
-debugWriteln := method()
+debugWriteln := method(
+    call delegateToMethod(Object, "writeln")
+)
 
 doRelativeFile("results.io")
 
@@ -157,11 +159,12 @@ ParserElement := Object clone do(
         if(self skipWhitespace,
             wt := self whiteChars
             instrlen := instring size
+            oldLoc := loc
             while((loc < instrlen) and (instring at(loc) in(wt)),
-                (self type == "LineEnd") whenTrue(
-                    writeln("preparse: ", self type, " ", loc, wt asList map(at(0)), "<<<")
-                )
                 loc := loc + 1
+            )
+            (loc != oldLoc) whenTrue(
+                debugWriteln(self type, ".preParse:", ["skipped", loc - oldLoc, "whitespace"])
             )
         )
 
@@ -224,6 +227,9 @@ ParserElement := Object clone do(
     )
 
     canParseNext := method(instring, loc,
+        (call evalArgs size != 2) whenTrue(
+            TypeError clone raise("canParseNext needs exactly 2 arguments!")
+        )
         ex := try(
             self tryParse(instring, loc)
         )
@@ -258,7 +264,7 @@ ParserElement := Object clone do(
         )
         tokens
     )
-
+    parseToList := method(s, self parseString(s) _asStringList )
 
     + := method(other,
         other isKindOf(Sequence) ifTrue(
@@ -1010,14 +1016,13 @@ Word := Token clone do(
         doActions := doActions whenNil(true)
         if(self re,
             match := self re matchesIn(instring exSlice(loc)) anchored
-
             if(match ?start != 0,
-
-                 ParseException with(instring, loc, self errmsg, self) raise
+                debugWriteln(self type, ".parseImpl: no match at ", loc)
+                ParseException with(instring, loc, self errmsg, self) raise
             )
-            # TODO: inefficient, needs fixing the RegexToken Addon
+            oldLoc := loc
             loc := loc + match end
-
+            debugWriteln(self type, ".parseImpl: ", ["match at", oldLoc, "to", loc])
             return [loc, match string]
         )
 
@@ -1047,10 +1052,12 @@ Word := Token clone do(
         )
 
         if(throwException,
-             ParseException with(instring, loc,self errmsg, self) raise
+            debugWriteln(self type, ".parseImpl: ",["no match at", start])
+            ParseException with(instring, loc, self errmsg, self) raise
         )
 
-       return [loc, instring exSlice(start, loc)]
+        debugWriteln(self type, ".parseImpl: ",["match at", start, "to", loc])
+        return [loc, instring exSlice(start, loc)]
     )
 
     asString := method(
@@ -1467,7 +1474,7 @@ NotAny := ParseElementEnhance clone do(
     )
 
     parseImpl := method( instring, loc, doActions,
-        writeln("NotAny.parseImpl: ", self expr canParseNext(instring, loc))
+        debugWriteln("NotAny.parseImpl: ", self expr)
         if(self expr canParseNext(instring, loc),
              ParseException with(instring, loc, self errmsg, self) raise
         )
@@ -1674,10 +1681,10 @@ LineEnd := _PositionToken clone do(
 
         if(loc < instring size,
             if(instring at(loc)  == 10,
-                writeln("LineEnd.parseImpl: ", "matched newline on ", loc,  "<<<")
+                debugWriteln("LineEnd.parseImpl: ", "matched newline on ", loc,  "<<<")
                 return [loc + 1, "\n"]
             ,
-                writeln("LineEnd.parseImpl: ", "no match at: ", loc, "<<<")
+                debugWriteln("LineEnd.parseImpl: ", "no match at: ", loc, "<<<")
                 ParseException with(instring, loc, self errmsg, self) raise
             )
         )

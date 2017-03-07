@@ -16,3 +16,7 @@ DSL := Object clone do(
     OnePlus := method(e1, e2, OneOrMore with(e1, e2))
     ZeroPlus := method(e1, e2, ZeroOrMore with(e1, e2))
 )
+
+makeParser := method(
+    call delegateToMethod(DSL, "do")
+)
