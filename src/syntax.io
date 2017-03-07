@@ -1,3 +1,5 @@
+WeakLink
+
 OperatorTable addOperator("$", 13)
 OperatorTable addOperator(":", 13)
 OperatorTable addOperator("<-", 0)
@@ -13,8 +15,12 @@ Object $ := method(
 )
 
 Object $$ := Object getSlot("$")
-
-
+WeakLink to := method(obj,
+    link := WeakLink clone
+    link setLink(obj)
+    link
+)
+Object repr := method(asString)
 Object squareBrackets := method(Object performWithArgList("list", call evalArgs))
 List asString := method("[" .. self fmt .. "]")
 List setSlot("squareBrackets", List getSlot("at"))
@@ -116,7 +122,7 @@ Object curlyBrackets := method(
     dict := Map clone
     msg := call message arguments first ifNil(return dict)
     dict setSlot := dict getSlot("atPut")
-    dict doMessage(msg)
+    dict doMessage(msg, call sender)
     dict removeSlot("setSlot")
     dict
 )

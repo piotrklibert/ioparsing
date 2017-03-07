@@ -1,12 +1,7 @@
-TypeError      := Exception clone
-ValueError     := Exception clone
-IndexError     := Exception clone
-AttributeError := Exception clone
-
 doRelativeFile("str.io")
+doRelativeFile("exceptions.io")
 
-_MAX_LEN   := 9999999999999999
-
+_MAX_LEN   := 999999999999
 
 alphas     := "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz"
 nums       := "0123456789"
@@ -16,247 +11,9 @@ _bslash    := 92 asCharacter
 whites     := "\t\n\r "
 printables := "0123456789abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ!'#$%&\"()*+,-./:;<=>?@[\\]^_`{|}~"
 
+debugWriteln := method()
 
-ParseBaseException := Exception clone do(
-    with := method(pstr, loc, msg, elem,
-        if(call message arguments size != 4,
-            ValueError raise($"
-                Expected 4 arguments to ParseBaseException `with`, got
-                #{call evalArgs}.
-            " dedent)
-        )
-        cln := self clone
-        cln loc := loc
-        if(msg not,
-            cln msg := pstr
-            cln pstr := ""
-        ,
-            cln msg := msg
-            cln pstr := pstr
-        )
-        cln parserElement := elem
-        cln args := [pstr, loc, msg]
-        cln
-    )
-
-    lineno := method(_lineno(self loc, self pstr))
-    col := method(_col(self loc, self pstr))
-    column := method(_col(self loc, self pstr))
-    line := method(_line(self loc, self pstr))
-
-    _from_exception := method(pe,
-        # internal factory method to simplify creating one type of
-        # ParseException from another - avoids having constructor signature
-        # conflicts among subclasses
-        self with(pe pstr, pe loc, pe msg, pe parserElement)
-    )
-
-    forward := method(AttributeError raise("No attribute: #{call message name}"))
-
-    asString := method(
-        out := nil
-        ex := try(
-            out := $"
-                #{msg} (at char #{self loc}),
-                (line:#{self lineno}, col:#{self column})
-            " dedent
-        )
-        ex whenNotNil(ex showStack)
-        out
-    )
-
-    markInputline := method(markerString,
-        # Extracts the exception line from the input string, and marks
-        # the location of the exception with a special symbol.
-        markerString ifNil(markerString := ">!<")
-        line_str := self line
-        line_column := self column - 1
-
-        if(markerString,
-            before := line_str exSlice(0, line_column)
-            after := line_str exSlice(line_column)
-            line_str := before .. markerString .. after
-        )
-
-        line_str stripped
-    )
-)
-
-
-ParseException := ParseBaseException clone
-ParseFatalException := ParseBaseException clone
-ParseSyntaxException := ParseFatalException clone
-
-
-RecursiveGrammarException := Exception clone do(
-    # exception thrown by L{ParserElement.validate} if the grammar could be
-    # improperly recursive
-    with := method(parseElementList,
-        cln := self clone
-        cln parseElementTrace := parseElementList
-        cln
-    )
-    asString := method($"RecursiveGrammarException: #{parseElementTrace}")
-)
-
-_ParseResultsWithOffset := Object clone do(
-    with := method(p1, p2,
-        cln := self clone
-        cln tup := [p1, p2]
-        cln
-    )
-
-    at := method(i,
-        self tup at(i)
-    )
-    setOffset := method(i,
-        self tup := [self tup first, i]
-        self
-    )
-)
-
-
-ParseResults := Object clone do(
-    with := method(toklist, name, asList, modal,
-        if(toklist isKindOf(ParseResults), return toklist)
-        toklist ifNil(toklist := [])
-        cln := self clone
-        cln __doinit := false
-        cln __name := nil
-        cln __parent := nil
-        cln __accumNames := Map clone
-        cln __asList := asList ifNilEval(true)
-        cln __modal := modal ifNilEval(true)
-        cln __toklist := []
-
-        if(toklist isKindOf(List),
-            toklist isEmpty ifFalse(
-                cln __toklist copy(toklist)
-            )
-        ,
-            cln __toklist := [toklist]
-        )
-        cln __tokdict := Map clone
-        if(name,
-            name isKindOf(Sequence) ifFalse(name := name asString)
-            if(modal not, cln __accumNames atPut(name, 0))
-            cln __name := name
-
-            if(toklist isInstance([Sequence, List]) and toklist size != 0,
-                toklist isKindOf(Sequence) whenTrue(toklist := [toklist])
-                if(toklist isKindOf(ParseResults),
-                    cln atPut(name, _ParseResultsWithOffset with(toklist copy(), 0))
-                ,
-                    cln atPut(name, _ParseResultsWithOffset with(ParseResults with(toklist[0]),0))
-                )
-                cln at(name) __name := name
-            )
-        )
-        cln
-    )
-
-    forward := method(
-        # Scheduler currentCoroutine showStack
-        resend
-    )
-    isEmpty := method(call delegateTo(self __toklist))
-
-    appendSeq := method(other,
-        results := if(other isKindOf(ParseResults), other __toklist, other)
-        self __toklist appendSeq(results)
-        self
-    )
-
-    append := method(res,
-        if(res isKindOf(ParseResults),
-            self __toklist appendSeq(other __toklist)
-            self __accumNames merge(other __accumNames)
-        ,
-            self __toklist append(res)
-        )
-        self
-    )
-
-
-    at := method(i,
-        if(i isKindOf(Number),
-            return  self __toklist[i]
-        ,
-            if(i in(self __accumNames),
-                return self __tokdict at(i) at(-1) at(0)
-            ,
-                toks := self __tokdict at(i) map(at(0))
-                return ParseResults with(toks)
-            )
-        )
-    )
-
-    atPut := method(k, v,
-        if(v isKindOf(_ParseResultsWithOffset),
-            self __tokdict atPut(k, self __tokdict at(k, []) append(v))
-            sub := v at(0)
-        ,
-            if(k isKindOf(Number),
-                self __toklist atPut(k, v)
-                sub := v
-            ,
-                offpr := _ParseResultsWithOffset with(v, 0)
-                self __tokdict atPut(k, self __tokdict at(k, []) append(offpr))
-                sub := v
-            )
-        )
-        if(sub isKindOf(ParseResults),
-            ref := WeakLink clone
-            ref setLink(self)
-            sub __parent := ref
-        )
-    )
-
-    remove := method(i,
-        if(i isKindOf(Number),
-            mylen := self __toklist size
-            self __toklist removeAt(i)
-        ,
-            self __tokdict removeAt(i)
-        )
-    )
-
-
-    size := method(call delegateTo(self __toklist))
-    foreach := method(call delegateTo(self __toklist))
-    reverse := method(call delegateTo(self __toklist))
-    asBoolean := method(self __toklist ?isEmpty not)
-
-    haskeys  := method(self __tokdict ?isEmpty not)
-    contains := method(k, self __tokdict hasKey(k))
-    keys     := method(call delegateTo(self __tokdict))
-    values   := method(call delegateTo(self __tokdict))
-    items    := method(self __tokdict map(k,v, [k, v]))
-
-    asString := method(self __toklist fmt)
-    # pop := method(arg, default,
-    #     if(call args isEmpty,
-    #         args := [-1]
-    #     )
-    #     for k,v in kwargs items(),
-    #         if k == 'default',
-    #             args := [args[0], v]
-    #         else,
-    #              TypeError raise("pop() got an unexpected keyword argument '%s'" % k)
-    #     if (isinstance(args[0], int) or
-    #                     len(args) == 1 or
-    #                     args[0] in self),
-    #         index := args[0]
-    #         ret := self[index]
-    #         del self[index]
-    #        return  ret
-    #     else,
-    #         defaultvalue := args[1]
-    #        return  defaultvalue
-    # )
-
-)
-
+doRelativeFile("results.io")
 
 ParserElement := Object clone do(
     # Abstract base level parser element class.
@@ -325,9 +82,26 @@ ParserElement := Object clone do(
         newself modalResults := listAllMatches not
         newself
     )
+    named := method(name, listAll,
+        self setName(name) setResultsName(name, listAll)
+    )
 
     setParseAction := method(
-        self parseAction := call evalArgs
+        c := call
+        self parseAction := call message arguments map(i, msg,
+            if(msg name == "block",
+                c evalArgAt(i)
+            ,
+                ctx := call sender
+                block(t, a, b,
+                    secondaryProto := {tok := t; self := ctx} asObject
+                    ctx appendProto(secondaryProto)
+                    res := ctx doMessage(msg, ctx)
+                    ctx removeProto(secondaryProto)
+                    res
+                )
+            )
+        )
         self callDuringTry := false
         self
     )
@@ -384,9 +158,13 @@ ParserElement := Object clone do(
             wt := self whiteChars
             instrlen := instring size
             while((loc < instrlen) and (instring at(loc) in(wt)),
+                (self type == "LineEnd") whenTrue(
+                    writeln("preparse: ", self type, " ", loc, wt asList map(at(0)), "<<<")
+                )
                 loc := loc + 1
             )
         )
+
         loc
     )
 
@@ -404,18 +182,20 @@ ParserElement := Object clone do(
         callPreParse ifNil(callPreParse := true)
 
         if(callPreParse and self callPreparse,
-            preloc := self preParse( instring, loc )
+            preloc := self preParse(instring, loc)
         ,
             preloc := loc
         )
         tokensStart := preloc
-
-        res := self parseImpl( instring, preloc, doActions )
+        res := self parseImpl(instring, preloc, doActions)
         loc := res first
+
         tokens := res last
 
         tokens := self postParse(instring, loc, tokens)
-
+        # self isKindOf(Optional) ifTrue(
+            # writeln("HERE5", self slotSummary, tokens slotSummary)
+        # )
         retTokens := ParseResults with(
             tokens, self resultsName, self saveAsList, self modalResults
         )
@@ -434,14 +214,20 @@ ParserElement := Object clone do(
     )
 
     tryParse := method(instring, loc,
-        self _parse(instring, loc, false) first
+        assert(loc isNil not)
+        ex := try(
+            res := self _parse(instring, loc, false) first
+        )
+        ex catch(ParseFatalException,
+            ParseException _from_exception(ex) raise
+        ) pass
     )
 
     canParseNext := method(instring, loc,
         ex := try(
             self tryParse(instring, loc)
         )
-        ex catch(ParseException,
+        ex whenNotNil(
             return false
         )
         return true
@@ -453,16 +239,12 @@ ParserElement := Object clone do(
     )
 
     parseString := method(instring, parseAll,
-        parseAll ifNil(
-            parseAll := false
-        )
+        parseAll ifNil(parseAll := false)
         # ParserElement resetCache()
         self streamlined ifFalse(
             self streamline()
         )
-        self ignoreExprs foreach(e,
-            e streamline()
-        )
+        self ignoreExprs foreach(streamline)
         self keepTabs ifFalse(
             instring := instring asMutable replaceSeq("\t", "    ")
         )
@@ -523,34 +305,32 @@ ParserElement := Object clone do(
         )
 
 
-        if(minElements < 0,
-             ValueError raise("cannot multiply ParserElement by negative value"))
-        if(optElements < 0,
-             ValueError raise("second tuple value must be greater or equal to first tuple value"))
-        if(minElements == 0 and optElements == 0,
-             ValueError raise("cannot multiply ParserElement by 0 or (0,0)"))
-
-        if(optElements,
+        if(minElements < 0, ValueError raise("cannot multiply ParserElement by negative value"))
+        if(optElements < 0, ValueError raise("second tuple value must be greater or equal to first tuple value"))
+        if(minElements == 0 and optElements == 0, ValueError raise("cannot multiply ParserElement by 0 or (0,0)"))
+        ret := nil
+        if(optElements != 0,
             makeOptionalList := block(n,
                 if(n > 1,
-                    return Optional(self + makeOptionalList(n - 1))
+                    Optional with(self + makeOptionalList call(n - 1))
                 ,
-                    return Optional(self)
+                    Optional with(self)
                 )
             )
             if(minElements,
                 if(minElements == 1,
                     ret := self + makeOptionalList call(optElements)
                 ,
-                    ret := And([self]*minElements) + makeOptionalList(optElements))
+                    ret := And with((0 .. minElements) map(x, self)) + makeOptionalList call(optElements)
+                )
             ,
-                ret := makeOptionalList(optElements)
+                ret := makeOptionalList call(optElements)
             )
         ,
             if(minElements == 1,
                 ret := self
             ,
-                ret := And(0 to(minElements) map(self))
+                ret := And with((0 .. (minElements + 1)) map(x, self copy()))
             )
         )
         return ret
@@ -766,7 +546,7 @@ Literal := Token clone do(
     asString := method(self match quoted)
 
     # Performance tuning: this routine gets called a *lot*
-    # if this is a single character match string  and the first character matches,
+    # if this is a single character match string and the first character matches,
     # short-circuit as quickly as possible, and avoid calling startswith
     parseImpl := method(instring, loc, doActions,
         doActions ifNil(doActions := true)
@@ -799,6 +579,7 @@ ParseExpression := ParserElement clone do(
                 if(x isKindOf(Sequence),
                     ParserElement _literalStringClass with(x)
                 ,
+
                     x
                 )
             )
@@ -810,19 +591,19 @@ ParseExpression := ParserElement clone do(
         cln
     )
 
-    at := method(exprs doMessage(call message))
+    at := method(call delegateTo(exprs))
 
-    append := method(other ,
+    append := method(other,
        self exprs append(other)
        self strRepr := nil
        self
     )
 
-    leaveWhitespace := method( self ,
+    leaveWhitespace := method(
         # Extends C{leaveWhitespace} defined in base class, and also
         # invokes C{leaveWhitespace} on all contained expressions.
         self skipWhitespace := false
-        self exprs := exprs map(copy leaveWhitespace)
+        self exprs := self exprs map(copy leaveWhitespace)
         self
     )
 
@@ -851,35 +632,33 @@ ParseExpression := ParserElement clone do(
     streamline := method(
         resend
         self exprs foreach(streamline)
-        # collapse nested And's of the form And( And( And( a,b), c), d) to And( a,b,c,d )
-        # but only if there are no parse actions or resultsNames on the nested And's
-        # (likewise for Or's and MatchFirst with's)
-        # if ( len(self.exprs) == 2 ):
-        #     other =self exprs[0]
-        #     if (  other isKindOf(self __class__ ) and
-        #           not(other.parseAction) and
-        #          other resultsName is None and
-        #           notother debug ):
-        #        self exprs =other exprs[:] + [self exprs[1] ]
-        #        self strRepr = None
-        #        self mayReturnEmpty |=other mayReturnEmpty
-        #        self mayIndexError  |=other mayIndexError
+        if(self exprs size == 2,
+            other := self exprs[0]
+            if(other isKindOf(self proto) and other parseAction isEmpty and \
+                    (other resultsName isNil or other resultsName == ""),
+                self exprs := other exprs clone append(self exprs[1])
+                self strRepr := nil
+                self mayReturnEmpty := self mayReturnEmpty or other mayReturnEmpty
+                self mayIndexError  := self mayIndexError or other mayIndexError
+            )
 
-        #     other =self exprs[-1]
-        #     if (  other isKindOf(self __class__ ) and
-        #           not(other.parseAction) and
-        #          other resultsName is None and
-        #           notother debug ):
-        #        self exprs =self exprs[:-1] +other exprs[:]
-        #        self strRepr = None
-        #        self mayReturnEmpty |=other mayReturnEmpty
-        #        self mayIndexError  |=other mayIndexError
-
+            other := self exprs at(-1)
+            if(other isKindOf(self proto) and other parseAction isEmpty and \
+                    other resultsName isNil,
+                self exprs := self exprs exSlice(0, -1) appendSeq(other exprs clone)
+                self strRepr := nil
+                self mayReturnEmpty := self mayReturnEmpty or other mayReturnEmpty
+                self mayIndexError  := self mayIndexError or other mayIndexError
+            )
+        )
         self errmsg := "Expected " .. self asString
         self
     )
 
-    setResultsName := method(resend)
+    setResultsName := method(name, listAll,
+        listAll := listAll whenNil(false)
+        super(setResultsName(name, listAll))
+    )
 
     validate := method(validateTrace,
         validateTrace := validateTrace ifNilEval([])
@@ -895,16 +674,16 @@ ParseExpression := ParserElement clone do(
     )
 )
 
-And := ParseExpression clone do(
-    _ErrorStop := Empty clone do(
-        with := method(
-            cln := resend
-            cln name := '-'
-            cln leaveWhitespace()
-            cln
-        )
+_ErrorStop := Empty clone do(
+    with := method(
+        cln := resend
+        cln name := '-'
+        cln leaveWhitespace()
+        cln
     )
+)
 
+And := ParseExpression clone do(
     with := method(exprs, savelist,
         cln := resend
         cln mayReturnEmpty := cln exprs detect(mayReturnEmpty not) ifNilEval(true)
@@ -915,21 +694,21 @@ And := ParseExpression clone do(
     )
 
     parseImpl := method(instring, loc, doActions,
-        doActions ifNil(
-            doActions := true
-        )
+        doActions ifNil(doActions := true)
 
         # pass False as last arg to _parse for first element, since we already
         # pre-parsed the string as part of our And pre-parsing
         res := self exprs[0] _parse(instring, loc, doActions, false)
         loc := res[0]
         resultlist := res[1]
+
         errorStop := false
 
         self exprs slice(1) foreach(e,
-            if(e isKindOf(And _ErrorStop),
+            if(e isKindOf(_ErrorStop),
                 errorStop := true
-                continue)
+                continue
+            )
             if(errorStop,
                 ex := try(
                     res := e _parse(instring, loc, doActions)
@@ -937,21 +716,21 @@ And := ParseExpression clone do(
                     exprtokens := res[1]
                 )
                 ex catch(ParseSyntaxException,
-                    raise(ex)
+                    ex raise
                 ) catch(ParseBaseException,
                     ex __traceback__ = nil
-                    ParseSyntaxException._from_exception(ex) raise
+                    ParseSyntaxException _from_exception(ex) raise
                 ) catch(IndexError,
-                     ParseSyntaxException raise(instring, len(instring), self.errmsg, self)
-                )
-            ,
-                res := e _parse( instring, loc, doActions )
-                loc := res[0]
-                exprtokens := res[1]
+                    ParseSyntaxException raise(instring, instring size,
+                                               self errmsg, self)
+                ) pass
             )
+            res := e _parse(instring, loc, doActions)
+            loc := res[0]
+            exprtokens := res[1]
             if(exprtokens isNil not,
-                resultlist appendSeq(exprtokens)
-             )
+                resultlist :=  resultlist appendSeq(exprtokens)
+            )
         )
         return [loc, resultlist]
     )
@@ -1206,7 +985,7 @@ Word := Token clone do(
             ,
                 if(cln initCharsOrig size == 1,
                     initEsc := cln initCharsOrig
-                    bodyEsc := _escapeRegexRangeChars(cln.bodyCharsOrig)
+                    bodyEsc := _escapeRegexRangeChars(cln bodyCharsOrig)
                     cln reString := $"#{initEsc}[#{bodyEsc}]*"
                 ) else(
                     initEsc := _escapeRegexRangeChars(cln initCharsOrig)
@@ -1230,13 +1009,16 @@ Word := Token clone do(
     parseImpl := method(instring, loc, doActions,
         doActions := doActions whenNil(true)
         if(self re,
-            matches := self re matchesIn(instring exSlice(loc))
-            if(matches ?count == 0,
+            match := self re matchesIn(instring exSlice(loc)) anchored
+
+            if(match ?start != 0,
+
                  ParseException with(instring, loc, self errmsg, self) raise
             )
             # TODO: inefficient, needs fixing the RegexToken Addon
-            loc := loc + matches at(0) end
-            return [loc, matches at(0) string]
+            loc := loc + match end
+
+            return [loc, match string]
         )
 
         if(self initChars contains(instring[loc]) not,
@@ -1294,7 +1076,7 @@ ParseElementEnhance := ParserElement clone do(
         savelist := savelist whenNil(false)
         cln := super(with(savelist))
         if(expr isKindOf(Sequence),
-            if(ParserElement._literalStringClass isKindOf(Token),
+            if(ParserElement _literalStringClass isKindOf(Token),
                 expr := ParserElement _literalStringClass with(expr)
             ,
                 expr := ParserElement _literalStringClass with(Literal with(expr))
@@ -1318,9 +1100,9 @@ ParseElementEnhance := ParserElement clone do(
         doActions ifNil(doActions := true)
 
         if(self expr isNil not,
-           return self expr _parse(instring, loc, doActions, false)
+            return self expr _parse(instring, loc, doActions, false)
         ,
-             ParseException with("", loc, self.errmsg, self) raise
+            ParseException with("", loc, self.errmsg, self) raise
         )
     )
 
@@ -1382,7 +1164,7 @@ _MultipleMatch := ParseElementEnhance clone do(
         if(ender isKindOf(Sequence),
             ender := ParserElement _literalStringClass with(ender)
         )
-        cln not_ender := if(ender isNil, nil, ~ender)
+        cln not_ender := if(ender isNil, nil, NotAny with(ender))
         cln
     )
 
@@ -1407,7 +1189,9 @@ _MultipleMatch := ParseElementEnhance clone do(
         try(
             hasIgnoreExprs := self ignoreExprs isEmpty not
             while(true,
-                if(checkEnder, tryNotEnder call(instring, loc))
+                if(checkEnder,
+                    tryNotEnder call(instring, loc)
+                )
                 if(hasIgnoreExprs,
                     preloc := self _skipIgnorables(instring, loc)
                 ,
@@ -1420,7 +1204,9 @@ _MultipleMatch := ParseElementEnhance clone do(
                     tokens appendSeq(tmptokens)
                 )
             )
-        ) catch(ParseException, nil)
+        ) catch(ParseException,
+            nil
+        ) pass
 
         return [loc, tokens]
     )
@@ -1444,8 +1230,13 @@ ZeroOrMore := _MultipleMatch clone do(
     )
 
     parseImpl := method(instring, loc, doActions,
-        try(return resend) \
-            catch(ParseException, return [loc, []])
+        res := nil
+        try(
+            res = resend
+        ) catch(ParseException,
+            res = [loc, []]
+        )
+        res
     )
 
     asString := method(
@@ -1473,6 +1264,7 @@ Optional := ParseElementEnhance clone do(
         cln saveAsList := cln expr saveAsList
         cln defaultValue := default whenNil(_optionalNotMatched)
         cln mayReturnEmpty := true
+        cln
     )
 
     parseImpl := method(instring, loc, doActions,
@@ -1512,10 +1304,7 @@ TokenConverter := ParseElementEnhance clone do(
 )
 
 Suppress := TokenConverter clone do(
-    postParse := method(instring, loc, tokenlist,
-        return []
-    )
-
+    postParse := method(instring, loc, tokenlist,  [])
     suppress := method(self)
 )
 
@@ -1673,13 +1462,14 @@ NotAny := ParseElementEnhance clone do(
         # do NOT use self leaveWhitespace(), don't want to propagate to exprs
         cln skipWhitespace := false
         cln mayReturnEmpty := true
-        cln errmsg := "Found unwanted token, " .. self expr asString
+        cln errmsg := "Found unwanted token, " .. cln expr asString
         cln
     )
 
-    parseImpl := method( instring, loc, doActions=True ,
+    parseImpl := method( instring, loc, doActions,
+        writeln("NotAny.parseImpl: ", self expr canParseNext(instring, loc))
         if(self expr canParseNext(instring, loc),
-             ParseException raise(instring, loc, self errmsg, self)
+             ParseException with(instring, loc, self errmsg, self) raise
         )
         return [loc, []]
     )
@@ -1728,7 +1518,8 @@ SkipTo := ParseElementEnhance clone do(
             )
             self ignoreExpr whenNotNil(
                 loop(
-                    try(tmploc := ignoreExpr_tryParse call(instring, tmploc)
+                    try(
+                        tmploc := ignoreExpr_tryParse call(instring, tmploc)
                     ) catch(ParseBaseException, break)
                 )
             )
@@ -1764,373 +1555,136 @@ SkipTo := ParseElementEnhance clone do(
     )
 )
 
+Combine := TokenConverter clone do(
+    with := method(expr, joinString, adjacent,
+        joinString := joinString whenNil("")
+        adjacent   := adjacent whenNil(true)
 
-__ParseResults := Object clone do(
+        cln := super(with(expr))
+        # suppress whitespace-stripping in contained parse expressions, but
+        # re-enable it on the Combine itself
+        if(adjacent,
+            cln leaveWhitespace())
+        cln adjacent := adjacent
+        cln skipWhitespace := true
+        cln joinString := joinString
+        cln callPreparse := true
+        cln
+    )
 
+    ignore := method(other,
+        if(self adjacent,
+            ParserElement ignore(other)
+        ,
+            super(ignore(other))
+        )
+        self
+    )
+
+    postParse := method(instring, loc, tokenlist,
+        retToks := tokenlist copy()
+        retToks removeAll()
+        subResult := [tokenlist _asStringList(self joinString) join("")]
+        retToks appendSeq(ParseResults with(subResult))
+        # modal := self.modalResults
+        if(self resultsName and retToks haskeys(),
+            [ retToks ]
+        ,
+            retToks
+        )
+    )
 )
 
-#     get := method( key, defaultValue=nil,
-# )
-#         """
-#        return s named result matching the given key, or if there is no
-#         such name, thenreturn s the given C{defaultValue} or C{nil} if no
-#         C{defaultValue} is specified.
 
-#         Similar to C{dict.get()}.
+_PositionToken := Token clone do(
+    with := method(
+        cln := resend
+        cln name := cln type
+        cln mayReturnEmpty := true
+        cln mayIndexError := false
+        cln
+    )
+)
 
-#         Example:,
-#             integer := Word(nums)
-#             date_str := integer("year") + '/' + integer("month") + '/' + integer("day")
+GoToColumn := _PositionToken clone do(
+    """
+    Token to advance to a specific column of input text; useful for tabular report scraping.
+    """
+    with := method(colno,
+        cln := super(with())
+        cln col := colno
+        cln
+    )
 
-#             result := date_str.parseString("1999/12/31")
-#             print(result.get("year")) # -> '1999'
-#             print(result.get("hour", "not specified")) # -> 'not specified'
-#             print(result.get("hour")) # -> nil
-#         """
-#         if key in self,
-#            return  self[key]
-#         else,
-#            return  defaultValue
+    preParse := method(instring, loc,
+        if(col(loc, instring) != self col,
+            instrlen := instring size
+            if(self ignoreExprs, loc := self _skipIgnorables(instring, loc))
+            while(
+                    loc < instrlen and instring at(loc) isSpace() and \
+                    col(loc, instring) != self col,
+                loc := loc + 1
+            )
+        )
+        return loc
+    )
 
-#     insert := method( index, insStr ,
-# )
-#         """
-#         Inserts new element at location index in the list of parsed tokens.
+    parseImpl := method(instring, loc, doActions,
+        doActions := doActions whenNil(true)
+        thiscol := col(loc, instring)
+        if(thiscol > self col,
+            ParseException with(
+                instring, loc, "Text not in expected column", self
+            ) raise
+        )
+        newloc := (loc + self col) - thiscol
+        ret := instring exSlice(loc, newloc)
+        return [newloc, ret]
+    )
+)
 
-#         Similar to C{list.insert()}.
+LineStart := _PositionToken clone do(
+    with := method(
+        cln := resend
+        cln errmsg := "Expected start of line"
+        cln
+    )
 
-#         Example:,
-#             print(OneOrMore(Word(nums)).parseString("0 123 321")) # -> ['0', '123', '321']
+    parseImpl := method( instring, loc, doActions,
+        doActions := doActions whenNil()
+        if(col(loc, instring) == 1,
+            return [loc, []]
+        )
+        ParseException with(instring, loc, self errmsg, self) raise
+    )
+)
 
-#             # use a parse action to insert the parse location in the front of the parsed results
-#             insert_locn := method(locn, tokens,
-# )
-#                 tokens insert(0, locn)
-#             print(OneOrMore(Word(nums)).addParseAction(insert_locn).parseString("0 123 321")) # -> [0, '0', '123', '321']
-#         """
-#         self __toklist.insert(index, insStr)
-#         # fixup indices in token dictionary
-#         for name,occurrences in self __tokdict.items(),
-#             for k, (value, position) in enumerate(occurrences),
-#                 occurrences[k] := _ParseResultsWithOffset(value, position + (position > index))
+LineEnd := _PositionToken clone do(
+    with := method(
+        cln := resend
+        cln setWhitespaceChars(
+            ParserElement defaultWhiteChars asMutable replaceSeq("\n", "")
+        )
+        cln errmsg := "Expected end of line"
+        cln
+    )
 
-#     append := method( item ,
-# )
-#         """
-#         Add single element to end of ParseResults list of elements.
+    parseImpl := method(instring, loc, doActions,
+        doActions := doActions whenNil(true)
 
-#         Example:,
-#             print(OneOrMore(Word(nums)).parseString("0 123 321")) # -> ['0', '123', '321']
-
-#             # use a parse action to compute the sum of the parsed integers, and add it to the end
-#             append_sum := method(tokens,
-#                 tokens append(sum(map(int, tokens)))
-# )
-#             print(OneOrMore(Word(nums)).addParseAction(append_sum).parseString("0 123 321")) # -> ['0', '123', '321', 444]
-#         """
-#         self __toklist.append(item)
-
-#     extend := method( itemseq ,
-# )
-#         """
-#         Add sequence of elements to end of ParseResults list of elements.
-
-#         Example:,
-#             patt := OneOrMore(Word(alphas))
-
-#             # use a parse action to append the reverse of the matched strings, to make a palindrome
-#             make_palindrome := method(tokens,
-# )
-#                 tokens extend(reversed([t[::-1] for t in tokens]))
-#                return  ''.join(tokens)
-#             print(patt.addParseAction(make_palindrome).parseString("lskdj sdlkjf lksd")) # -> 'lskdjsdlkjflksddsklfjkldsjdksl'
-#         """
-#         if itemseq isKindOf( ParseResults),
-#             self += itemseq
-#         else,
-#             self __toklist.extend(itemseq)
-
-#     clear := method(
-#         """
-#         Clear all elements and results names.
-#         """
-#         del self __toklist[:]
-#         self __tokdict.clear()
-# )
-
-#     __getattr__ := method( name ,
-# )
-#         try,
-#            return  self[name]
-#         except KeyError,
-#            return  ""
-
-#         if name in self __tokdict,
-#             if name not in self __accumNames,
-#                return  self __tokdict[name][-1][0]
-#             else,
-#                return  ParseResults([ v[0] for v in self __tokdict[name] ])
-#         else,
-#            return  ""
-
-#     __add__ := method( other ,
-# )
-#         ret := self copy()
-#         ret += other
-#        return  ret
-
-    # extend := method(other,
-    #     if(other ?__tokdict,
-    #         offset := len(self.__toklist)
-    #         addoffset := lambda a: offset if a<0 else a+offset
-    #         otheritems := other __tokdict.items()
-    #         otherdictitems := [(k, _ParseResultsWithOffset(v[0],addoffset(v[1])) ) for (k,vlist) in otheritems for v in vlist]
-    #         for k,v in otherdictitems,
-    #             self[k] := v
-    #             if isinstance(v[0],ParseResults),
-    #                 v[0].__parent := wkref(self)
-    #     )
-    #     return  self
-    # )
-
-#     __radd__ := method( other,
-# )
-#         if other isKindOf(int) and other == 0,
-#             # useful for merging many ParseResults using sum() builtin
-#            return  self copy()
-#         else,
-#             # this may  a TypeError  raise- so be it
-#            return  other + self
-
-#     __repr__ := method(
-# )
-#        return  "(%s, %s)" % ( repr( self __toklist ), repr( self __tokdict ) )
-
-#     asString := method(
-# )
-#        return  '[' + ', '.join(_ustr(i) if i isKindOf( ParseResults) else repr(i) for i in self __toklist) + ']'
-
-#     _asStringList := method( sep='' ,
-# )
-#         out := []
-#         for item in self __toklist,
-#             if out and sep,
-#                 out append(sep)
-#             if  item isKindOf( ParseResults ),
-#                 out += item _asStringList()
-#             else,
-#                 out append( _ustr(item) )
-#        return  out
-
-#     asList := method(
-# )
-#         """
-#        return s the parse results as a nested list of matching tokens, all converted to strings.
-
-#         Example:,
-#             patt := OneOrMore(Word(alphas))
-#             result := patt parseString("sldkj lsdkj sldkj")
-#             # even though the result prints in string-like form, it is actually a pyparsing ParseResults
-#             print(type(result), result) # -> <class 'pyparsing.ParseResults'> ['sldkj', 'lsdkj', 'sldkj']
-
-#             # Use asList() to create an actual list
-#             result_list := result asList()
-#             print(type(result_list), result_list) # -> <class 'list'> ['sldkj', 'lsdkj', 'sldkj']
-#         """
-#        return  [res.asList() if res isKindOf(ParseResults) else res for res in self __toklist]
-
-#     asDict := method(
-# )
-#         """
-#        return s the named parse results as a nested dictionary.
-
-#         Example:,
-#             integer := Word(nums)
-#             date_str := integer("year") + '/' + integer("month") + '/' + integer("day")
-
-#             result := date_str.parseString('12/31/1999')
-#             print(type(result), repr(result)) # -> <class 'pyparsing.ParseResults'> (['12', '/', '31', '/', '1999'], {'day': [('1999', 4)], 'year': [('12', 0)], 'month': [('31', 2)]})
-
-#             result_dict := result asDict()
-#             print(type(result_dict), repr(result_dict)) # -> <class 'dict'> {'day': '1999', 'year': '12', 'month': '31'}
-
-#             # even though a ParseResults supports dict-like access, sometime you just need to have a dict
-#             import json
-#             print(json.dumps(result)) # -> Exception: TypeError: ... is not JSON serializable
-#             print(json.dumps(result.asDict())) # -> {"month": "31", "day": "1999", "year": "12"}
-#         """
-#         if PY_3,
-#             item_fn := self items
-#         else,
-#             item_fn := self iteritems
-
-#         toItem := method(obj,
-# )
-#             if obj isKindOf( ParseResults),
-#                 if obj haskeys(),
-#                    return  obj asDict()
-#                 else,
-#                    return  [toItem(v) for v in obj]
-#             else,
-#                return  obj
-
-#        return  dict((k,toItem(v)) for k,v in item_fn())
-
-#     copy := method(
-# )
-#         """
-#        return s a new copy of a C{ParseResults} object.
-#         """
-#         ret := ParseResults( self __toklist )
-#         ret __tokdict := self __tokdict.copy()
-#         ret __parent := self __parent
-#         ret __accumNames.update( self __accumNames )
-#         ret __name := self __name
-#        return  ret
-
-#     __lookup := method(sub,
-# )
-#         for k,vlist in self __tokdict.items(),
-#             for v,loc in vlist,
-#                 if sub is v,
-#                    return  k
-#        return  nil
-
-#     getName := method(
-# )
-#         """
-#        return s the results name for this token expression. Useful when several
-#         different expressions might match at a particular location.
-
-#         Example:,
-#             integer := Word(nums)
-#             ssn_expr := RegexToken(r"\d\d\d-\d\d-\d\d\d\d")
-#             house_number_expr := Suppress('#') + Word(nums, alphanums)
-#             user_data := (Group(house_number_expr)("house_number")
-#                         | Group(ssn_expr)("ssn")
-#                         | Group(integer)("age"))
-#             user_info := OneOrMore(user_data)
-
-#             result := user_info.parseString("22 111-22-3333 #221B")
-#             for item in result,
-#                 print(item.getName(), ':', item[0])
-#         prints:,
-#             age : 22
-#             ssn : 111-22-3333
-#             house_number : 221B
-#         """
-#         if self __name,
-#            return  self __name
-#         elif self __parent,
-#             par := self __parent()
-#             if par,
-#                return  par __lookup(self)
-#             else,
-#                return  nil
-#         elif (len(self) == 1 and
-#                len(self.__tokdict) == 1 and
-#                next(iter(self.__tokdict.values()))[0][1] in (0,-1)),
-#            return  next(iter(self.__tokdict.keys()))
-#         else,
-#            return  nil
-
-#     dump := method( indent='', depth=0, full=True,
-# )
-#         """
-#         Diagnostic method for listing out the contents of a C{ParseResults}.
-#         Accepts an optional C{indent} argument so that this string can be embedded
-#         in a nested display of other data.
-
-#         Example:,
-#             integer := Word(nums)
-#             date_str := integer("year") + '/' + integer("month") + '/' + integer("day")
-
-#             result := date_str.parseString('12/31/1999')
-#             print(result.dump())
-#         prints:,
-#             ['12', '/', '31', '/', '1999']
-#             - day: 1999
-#             - month: 31
-#             - year: 12
-#         """
-#         out := []
-#         NL := '\n'
-#         out append( indent+_ustr(self.asList()) )
-#         if full,
-#             if self haskeys(),
-#                 items := sorted((str(k), v) for k,v in self items())
-#                 for k,v in items,
-#                     if out,
-#                         out append(NL)
-#                     out append( "%s%s- %s: " % (indent,('  '*depth), k) )
-#                     if v isKindOf(ParseResults),
-#                         if v,
-#                             out append( v dump(indent,depth+1) )
-#                         else,
-#                             out append(_ustr(v))
-#                     else,
-#                         out append(repr(v))
-#             elif any(vv isKindOf(ParseResults) for vv in self),
-#                 v := self
-#                 for i,vv in enumerate(v),
-#                     if vv isKindOf(ParseResults),
-#                         out append("\n%s%s[%d]:\n%s%s%s" % (indent,('  '*(depth)),i,indent,('  '*(depth+1)),vv.dump(indent,depth+1) ))
-#                     else,
-#                         out append("\n%s%s[%d]:\n%s%s%s" % (indent,('  '*(depth)),i,indent,('  '*(depth+1)),_ustr(vv)))
-
-#        return  "".join(out)
-
-#     pprint := method( *args, **kwargs,
-# )
-#         """
-#         Pretty-printer for parsed results as a list, using the C{pprint} module.
-#         Accepts additional positional or keyword args as defined for the
-#         C{pprint.pprint} method. (U{http://docs.python.org/3/library/pprint.html#pprint.pprint})
-
-#         Example:,
-#             ident := Word(alphas, alphanums)
-#             num := Word(nums)
-#             func := Forward()
-#             term := ident | num | Group('(' + func + ')')
-#             func <<= ident + Group(Optional(delimitedList(term)))
-#             result := func parseString("fna a,b,(fnb c,d,200),100")
-#             result pprint(width=40)
-#         prints:,
-#             ['fna',
-#              ['a',
-#               'b',
-#               ['(', 'fnb', ['c', 'd', '200'], ')'],
-#               '100']]
-#         """
-#         pprint pprint(self.asList(), *args, **kwargs)
-
-#     # add support for pickle protocol
-#     __getstate__ := method(
-# )
-#        return  ( self __toklist,
-#                  ( self __tokdict.copy(),
-#                    self __parent isNil not and self __parent() or nil,
-#                    self __accumNames,
-#                    self __name ) )
-
-#     __setstate__ := method(state,
-# )
-#         self __toklist := state[0]
-#         (self.__tokdict,
-#          par,
-#          inAccumNames,
-#          self __name) := state[1]
-#         self __accumNames := {}
-#         self __accumNames.update(inAccumNames)
-#         if par isNil not,
-#             self __parent := wkref(par)
-#         else,
-#             self __parent := nil
-
-#     __getnewargs__ := method(
-# )
-#        return  self __toklist, self __name, self __asList, self __modal
-
-#     __dir__ := method(
-# )
-#        return  (dir(type(self)) + list(self.keys()))
+        if(loc < instring size,
+            if(instring at(loc)  == 10,
+                writeln("LineEnd.parseImpl: ", "matched newline on ", loc,  "<<<")
+                return [loc + 1, "\n"]
+            ,
+                writeln("LineEnd.parseImpl: ", "no match at: ", loc, "<<<")
+                ParseException with(instring, loc, self errmsg, self) raise
+            )
+        )
+        if(loc == instring size,
+            return [loc + 1, []]
+        ,
+             ParseException with(instring, loc, self errmsg, self) raise
+        )
+    )
+)

@@ -1,10 +1,11 @@
 Block oldAsString := Block getSlot("asString")
 Block asFullString := Block getSlot("asString")
 Block asString := Block getSlot("asSimpleString")
+
 File asString := method("<File: '" .. self name .. "'>")
 Directory asString := method("<Dir: '" .. self name .. "'>")
 
-
+Sequence isSpace := method(self == " ")
 Sequence require := method(call sender doFile(self))
 
 PRE := Sequence clone do(
